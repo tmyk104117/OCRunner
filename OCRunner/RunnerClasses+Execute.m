@@ -342,9 +342,11 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
                 ORNode *valueExp = kv.lastObject;
                 id key = [keyExp execute:scope].objectValue;
                 id value = [valueExp execute:scope].objectValue;
-                NSAssert(key != nil, @"the key of NSDictionary can't be nil");
-                NSAssert(value != nil, @"the vale of NSDictionary can't be nil");
-                dict[key] = value;
+                if (key && value){
+                    dict[key] = value;
+                }else{
+                    NSLog(@"the key %@ or value %@ of NSDictionary can't be nil", key?:@"", value?:@"");
+                }
             }
             return [MFValue valueWithObject:[dict copy]];
         }
@@ -353,8 +355,11 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
             NSMutableArray *array = [NSMutableArray array];
             for (ORNode *exp in exps) {
                 id value = [exp execute:scope].objectValue;
-                NSAssert(value != nil, @"the vale of NSArray can't be nil");
-                [array addObject:value];
+                if (value) {
+                    [array addObject:value];
+                }else{
+                    NSLog(@"the value of NSArray can't be nil, %@", array);
+                }
             }
             return [MFValue valueWithObject:[array copy]];
         }
@@ -508,7 +513,8 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
         NSCAssert(value != nil, @"value must be existed");
         [args addObject:value];
     }
-    if ([self.caller isKindOfClass:[ORMethodCall class]] && [(ORMethodCall *)self.caller isDot]){
+    if ([self.caller isKindOfClass:[ORMethodCall class]]
+        && [(ORMethodCall *)self.caller methodOperator] == MethodOpretorDot){
         // TODO: 调用block
         // make.left.equalTo(xxxx);
         MFValue *value = [(ORMethodCall *)self.caller execute:scope];
@@ -671,7 +677,7 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
         }
     }else if ([self.value isKindOfClass:[ORMethodCall class]]) {
         ORMethodCall *methodCall = (ORMethodCall *)self.value;
-        if (!methodCall.isDot) {
+        if (!methodCall.methodOperator) {
             NSCAssert(0, @"must dot grammar");
         }
         //调用对象setter方法
@@ -1334,6 +1340,18 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
         protocol_addMethodDescription(protocol, NSSelectorFromString(declare.selectorName), typeEncoding, NO, !declare.isClassMethod);
     }
     objc_registerProtocol(protocol);
+    return [MFValue voidValue];
+}
+@end
+
+@implementation ORCArrayVariable (Execute)
+- (MFValue *)execute:(MFScopeChain *)scope{
+    return [MFValue voidValue];
+}
+@end
+
+@implementation ORUnionExpressoin (Execute)
+- (MFValue *)execute:(MFScopeChain *)scope{
     return [MFValue voidValue];
 }
 @end
