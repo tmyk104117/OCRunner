@@ -76,7 +76,7 @@ class CRunnerTests: XCTestCase {
         XCTAssert(scopeValue!.longValue == -1)
         scopeValue = scope.getValueWithIdentifier("e")
         XCTAssert(scopeValue!.type == OCTypeLongLong)
-        XCTAssert(scopeValue!.longLongValue == -1)
+        XCTAssert(scopeValue!.longlongValue == -1)
         scopeValue = scope.getValueWithIdentifier("f")
         XCTAssert(scopeValue!.type == OCTypeUChar)
         XCTAssert(scopeValue!.uCharValue == 1)
@@ -709,9 +709,9 @@ class CRunnerTests: XCTestCase {
     func testSuperMethodCall(){
         let source =
         """
-        @implementation MFCallSuperNoArgTest
+        @implementation MFCallSuperNoArgTestSupserTest
         - (BOOL)testCallSuperNoArgTestSupser{
-            return [super testCallSuperNoArgTestSupser];
+            return YES;
         }
         @end
         """
@@ -741,6 +741,24 @@ class CRunnerTests: XCTestCase {
         }
         let test = MFCallSuperNoArgTest.init()
         XCTAssert(test.testCallSuperNoArgTestSupser())
+    }
+    func testSuperClassReplace(){
+        let source =
+        """
+        @implementation BMW
+        - (int)run
+        {
+            return 2;
+        }
+        @end
+        """
+        let ast = ocparser.parseSource(source)
+        let classes = ast.classCache.allValues as! [ORClass];
+        for classValue in classes {
+            classValue.execute(scope);
+        }
+        let test = MiniBMW.init()
+        XCTAssert(test.run() == 2)
     }
     func testGCD(){
         let source =
@@ -980,5 +998,36 @@ class CRunnerTests: XCTestCase {
         XCTAssert(scope.getValueWithIdentifier("b")?.objectValue == nil)
         XCTAssert(scope.getValueWithIdentifier("c")?.objectValue == nil)
         XCTAssert(scope.getValueWithIdentifier("d")?.objectValue == nil)
+    }
+    func testMethodReturn(){
+        let source =
+        """
+        @implementation ORMethodReturnTest
+        - (NSString *)showLog{
+           [self getMsg:@"Hello world!"];
+           return @"test";
+        }
+        - (NSString *)getMsg:(NSString *)msg{
+            return [NSString stringWithFormat:@"{OCRunner} %@", msg];
+        }
+        @end
+        NSString *value = [[ORMethodReturnTest new] showLog];
+        """
+        let ast = ocparser.parseSource(source)
+        for classValue in ast.nodes {
+            (classValue as! OCExecute).execute(scope);
+        }
+        let value = scope.getValueWithIdentifier("value")?.objectValue as? String ?? "failed"
+        XCTAssert(value == "test", value)
+    }
+    func testUnknownSelector(){
+        let source =
+        """
+        [UIColor red];
+        """
+        let ast = ocparser.parseSource(source)
+        for classValue in ast.nodes {
+            (classValue as! OCExecute).execute(scope);
+        }
     }
 }
