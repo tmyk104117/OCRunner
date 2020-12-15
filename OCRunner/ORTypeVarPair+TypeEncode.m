@@ -12,11 +12,14 @@
 
 @implementation ORTypeVarPair (TypeEncode)
 - (const char *)typeEncode{
+    TypeKind type = self.type.type;
     if ([self.var isKindOfClass:[ORFuncVariable class]]) {
-        __autoreleasing NSString *string = self.var.isBlock ? @"@?" : @"^";
-        return string.UTF8String;
+        // Block的typeEncode
+        if (self.var.isBlock) {
+            return @"@?".UTF8String;
+        }
     }
-    if (self.type.type == TypeStruct && self.var.ptCount == 0) {
+    if (type == TypeStruct && self.var.ptCount == 0) {
         ORStructDeclare *declare = [[ORStructDeclareTable shareInstance] getStructDeclareWithName:self.type.name];
         return declare.typeEncoding;
     }
@@ -24,7 +27,6 @@
     memset(encoding, 0, 128);
 #define append(str) strcat(encoding,str)
     NSInteger pointCount = self.var.ptCount;
-    TypeKind type = self.type.type;
     while (pointCount > 0) {
         if (type == TypeBlock) {
             break;

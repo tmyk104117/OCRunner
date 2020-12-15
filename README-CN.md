@@ -233,7 +233,7 @@ CGRect CGRectMake(CGFloat x, CGFloat y, CGFloat width, CGFloat height)
 
 ### 如何确定补丁中是否包含源文件
 
-![1](https://silverfruity.github.io/2020/09/04/OCRunner/OCRunner_2.jpeg)
+![1](https://raw.githubusercontent.com/SilverFruity/silverfruity.github.io/server/source/_posts/OCRunner/OCRunner_2.jpeg)
 
 查看Run Script打印的 **InputFiles** 中是否包含源文件.
 
@@ -242,9 +242,50 @@ CGRect CGRectMake(CGFloat x, CGFloat y, CGFloat width, CGFloat height)
 
 ## 性能测试
 
+### 加载时间
+
 ![2](https://silverfruity.github.io/2020/09/04/OCRunner/OCRunner_1.jpeg)
 
-根据已知数据，OCRunner的补丁加载速度是JSPatch的20倍+，随着补丁大小的不断增加，这个倍数会不断增加。运行速度和内存占用与MangoFix差距不大。内存占用方面应该会更优，OCRunner中MFValue的值采用malloc来复制值，不会有多个类型的实例变量。
+### 执行速度和内存占用
+
+设备：iPhone SE2 , iOS 14.2,  Xcode 12.1.
+
+以经典的斐波那契数列函数作为例子，求第25项的值的测试结果.
+
+#### JSPatch
+
+* 执行时间，平均时间为0.169s
+
+  ![](./ImageSource/JSPatchTimes.png)
+
+* 内存占用，一直稳定在12MB左右
+
+
+![](./ImageSource/JSPatchMemory.png)
+
+#### OCRunner
+* 执行时间，平均时间为1.05s
+
+  ![](./ImageSource/OCRunnerTimes.png)
+
+* 内存占用，峰值为60MB左右
+
+
+![](./ImageSource/OCRunnerMemory.png)
+
+#### Mango
+* 执行时间，平均时间为2.38s。
+
+  ![](./ImageSource/MangoTimes.png)
+
+* 内存占用，持续走高，最高的时候大约为350MB。
+
+
+![](./ImageSource/MangoMemory.png)
+
+* 目前递归方法调用的速度，大约为JSPatch的1/5倍，为MangoFix的2.5倍左右。
+* OCRunner的补丁加载速度是Mango的10倍+，随着补丁大小的不断增加，这个倍数会不断增加，针对JSPatch，目前未知。
+* 关于递归方法调用时的内存占用，目前存在占用过大的问题。求斐波那契数列数列第30项的时候，Mango会爆内存，OCRunner内存峰值占用大概在600MB。
 
 
 

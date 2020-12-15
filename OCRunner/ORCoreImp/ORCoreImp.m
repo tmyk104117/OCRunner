@@ -10,7 +10,6 @@
 #import "MFValue.h"
 #import <objc/message.h>
 #import "RunnerClasses+Execute.h"
-#import "MFWeakPropertyBox.h"
 #import "MFMethodMapTable.h"
 #import "MFPropertyMapTable.h"
 #import "ORTypeVarPair+TypeEncode.h"
@@ -19,6 +18,7 @@
 #import "ORCoreFunctionCall.h"
 void methodIMP(ffi_cif *cfi,void *ret,void **args, void*userdata){
     MFScopeChain *scope = [MFScopeChain scopeChainWithNext:[MFScopeChain topScope]];
+    ORMethodImplementation *methodImp = (__bridge ORMethodImplementation *)userdata;
     id target = *(__strong id *)args[0];
     SEL sel = *(SEL *)args[1];
     BOOL classMethod = object_isClass(target);
@@ -28,18 +28,14 @@ void methodIMP(ffi_cif *cfi,void *ret,void **args, void*userdata){
         MFValue *argValue = [[MFValue alloc] initTypeEncode:[sig getArgumentTypeAtIndex:i] pointer:args[i]];
         [argValues addObject:argValue];
     }
-    Class class;
     if (classMethod) {
         scope.instance = [MFValue valueWithClass:target];
-        class = target;
     }else{
         scope.instance = [MFValue valueWithObject:target];
-        class = [target class];
     }
     MFValue *value = nil;
     [ORArgsStack push:argValues];
-    MFMethodMapTableItem *map = [[MFMethodMapTable shareInstance] getMethodMapTableItemWith:class classMethod:classMethod sel:sel];
-    value = [map.methodImp execute:scope];
+    value = [methodImp execute:scope];
     if (value.type != TypeVoid && value.pointer != NULL){
         // 类型转换
         [value writePointer:ret typeEncode:[sig methodReturnType]];
@@ -68,13 +64,12 @@ void blockInter(ffi_cif *cfi,void *ret,void **args, void*userdata){
 void getterImp(ffi_cif *cfi,void *ret,void **args, void*userdata){
     id target = *(__strong id *)args[0];
     SEL sel = *(SEL *)args[1];
-    NSString *propName = NSStringFromSelector(sel);
-    ORPropertyDeclare *propDef = [[MFPropertyMapTable shareInstance] getPropertyMapTableItemWith:[target class] name:propName].property;
-    const char *type = propDef.var.typeEncode;
+    ORPropertyDeclare *propDef = (__bridge ORPropertyDeclare *)userdata;
+    NSString *propName = propDef.var.var.varname;
     NSMethodSignature *sig = [target methodSignatureForSelector:sel];
     __autoreleasing MFValue *propValue = objc_getAssociatedObject(target, mf_propKey(propName));
     if (!propValue) {
-        propValue = [MFValue defaultValueWithTypeEncoding:type];
+        propValue = [MFValue defaultValueWithTypeEncoding:propDef.var.typeEncode];
     }
     if (propValue.type != TypeVoid && propValue.pointer != NULL){
         [propValue writePointer:ret typeEncode:sig.methodReturnType];
@@ -86,11 +81,8 @@ void setterImp(ffi_cif *cfi,void *ret,void **args, void*userdata){
     SEL sel = *(SEL *)args[1];
     const char *argTypeEncode = [[target methodSignatureForSelector:sel] getArgumentTypeAtIndex:2];
     MFValue *value = [MFValue valueWithTypeEncode:argTypeEncode pointer:args[2]];
-    NSString *setter = NSStringFromSelector(sel);
-    NSString *name = [setter substringWithRange:NSMakeRange(3, setter.length - 4)];
-    NSString *first = [name substringWithRange:NSMakeRange(0, 1)].lowercaseString;
-    NSString *propName = [NSString stringWithFormat:@"%@%@",first,[name substringFromIndex:1]];
-    ORPropertyDeclare *propDef = [[MFPropertyMapTable shareInstance] getPropertyMapTableItemWith:[target class] name:propName].property;
+    ORPropertyDeclare *propDef = (__bridge ORPropertyDeclare *)userdata;
+    NSString *propName = propDef.var.var.varname;
     MFPropertyModifier modifier = propDef.modifier;
     if (modifier & MFPropertyModifierMemWeak) {
         value.modifier = DeclarationModifierWeak;

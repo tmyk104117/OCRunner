@@ -21,8 +21,7 @@
 @end
 
 @implementation MFPropertyMapTable{
-    NSLock *_lock;
-    NSCache *classCaches;
+    CFMutableDictionaryRef _propertyCache;
 }
 
 + (instancetype)shareInstance{
@@ -36,30 +35,38 @@
 
 - (instancetype)init{
     if (self = [super init]) {
-        _dic = [NSMutableDictionary dictionary];
-        _lock = [[NSLock alloc] init];
-        classCaches = [NSCache new];
+        _propertyCache = CFDictionaryCreateMutable(CFAllocatorGetDefault(), 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     }
     return self;
 }
 
 - (void)addPropertyMapTableItem:(MFPropertyMapTableItem *)propertyMapTableItem{
+    if (!propertyMapTableItem) return;
+    
     NSString *propertyName = propertyMapTableItem.property.var.var.varname;
-    if (!propertyName.length) {
-        return;
-    }
+    if (!propertyName.length) return;
+    
     Class class = propertyMapTableItem.clazz;
-    NSCache *propertyMap = [classCaches objectForKey:class];
-    if (propertyMap == nil){
-        propertyMap = [NSCache new];
-        [classCaches setObject:propertyMap forKey:class];
+    
+    if (class == NULL) return;
+    
+    CFMutableDictionaryRef propertyMap = (CFMutableDictionaryRef)CFDictionaryGetValue(_propertyCache, (__bridge const void *)(class));
+    if (propertyMap == NULL){
+        propertyMap = CFDictionaryCreateMutable(CFAllocatorGetDefault(), 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        CFDictionarySetValue(_propertyCache, (__bridge const void *)(class), propertyMap);
     }
-    [propertyMap setObject:propertyMapTableItem forKey:propertyName];
+    if (propertyName == nil) return;
+    CFDictionarySetValue(propertyMap, (__bridge CFStringRef)(propertyName), (__bridge const void *)(propertyMapTableItem));
 }
 
 - (MFPropertyMapTableItem *)getPropertyMapTableItemWith:(Class)clazz name:(NSString *)name{
-    NSCache *propertyMap = [classCaches objectForKey:clazz];
-    return [propertyMap objectForKey:name];
+    if (clazz == NULL) return nil;
+    if (name == nil) return nil;
+
+    CFDictionaryRef propertyMap = CFDictionaryGetValue(_propertyCache, (__bridge const void *)(clazz));
+    if (propertyMap == NULL) return nil;
+    
+    return CFDictionaryGetValue(propertyMap, (__bridge CFStringRef)(name));
 }
 
 

@@ -8,8 +8,10 @@
 
 #import <XCTest/XCTest.h>
 #import <OCRunner.h>
+#import "ORTypeVarPair+TypeEncode.h"
 #import <oc2mangoLib/oc2mangoLib.h>
 #import <objc/message.h>
+#import "ORWeakPropertyAndIvar.h"
 @interface ORTestWithObjc : XCTestCase
 @property (nonatomic, strong)MFScopeChain *currentScope;
 @property (nonatomic, strong)MFScopeChain *topScope;
@@ -229,7 +231,7 @@ Element2Struct *Element2StructMake(){
     MFScopeChain *scope = self.currentScope;
     NSString * source =
     @"UIView *view = [UIView new];"
-    "view.frame = CGRectMake(1,2,3,4);"
+    "view.frame = CGRectMake(0,0,3,4);"
     "CGRect frame = view.frame;"
     "CGFloat a = frame.size.height;";
     AST *ast = [OCParser parseSource:source];
@@ -447,7 +449,134 @@ typedef struct MyStruct2 {
     MFValue *a = [scope recursiveGetValueWithIdentifier:@"a"];
     XCTAssert(a.intValue == fibonaccia(20));
 }
-
+- (void)testFunctionPointerCall{
+    MFScopeChain *scope = self.currentScope;
+    [ORSystemFunctionPointerTable reg:@"class_getMethodImplementation" pointer:&class_getMethodImplementation];
+    NSString * source =
+    @"void *class_getMethodImplementation(Class cls, SEL name);"
+    @"int (*imp)(id target, SEL sel) = class_getMethodImplementation([ORTestReplaceClass class], @selector(testOriginalMethod));"
+    @"id value = [ORTestReplaceClass new];"
+    @"int a = imp(value, @selector(testOriginalMethod));";
+    AST *ast = [OCParser parseSource:source];
+    for (id <OCExecute> exp in ast.nodes) {
+        [exp execute:scope];
+    }
+    MFValue *a = [scope recursiveGetValueWithIdentifier:@"a"];
+    XCTAssert(a.intValue == 2);
+}
+- (void)testMutiTypeCalculate{
+    MFScopeChain *scope = self.currentScope;
+    NSString * source =
+    @"int a = 1 * 1.1;"
+    "int b = 2 * 10;"
+    "double c = 1 + 1.12;"
+    "double d = 1 / 2.0;"
+    "double e = 1 - 0.25;"
+    "BOOL f = 0 < 0.25;"
+    "BOOL g = 0.25 <= 0;"
+    "double h = 0.25 - 1;"
+    ;
+    AST *ast = [OCParser parseSource:source];
+    for (id <OCExecute> exp in ast.nodes) {
+        [exp execute:scope];
+    }
+    MFValue *a = [scope recursiveGetValueWithIdentifier:@"a"];
+    MFValue *b = [scope recursiveGetValueWithIdentifier:@"b"];
+    MFValue *c = [scope recursiveGetValueWithIdentifier:@"c"];
+    MFValue *d = [scope recursiveGetValueWithIdentifier:@"d"];
+    MFValue *e = [scope recursiveGetValueWithIdentifier:@"e"];
+    MFValue *f = [scope recursiveGetValueWithIdentifier:@"f"];
+    MFValue *g = [scope recursiveGetValueWithIdentifier:@"g"];
+    MFValue *h = [scope recursiveGetValueWithIdentifier:@"h"];
+    XCTAssert(a.intValue == 1);
+    XCTAssert(b.intValue == 20);
+    XCTAssert(c.doubleValue == 2.12);
+    XCTAssert(d.doubleValue == 0.5);
+    XCTAssert(e.doubleValue == 0.75);
+    XCTAssert(f.boolValue == YES);
+    XCTAssert(g.boolValue == NO);
+    XCTAssert(h.doubleValue == -0.75);
+}
+- (void)testCFunctionReturnTypeEncode{
+    NSString * source =
+    @"CGFloat testFunctionReturnType(int arg);"
+    @"CGFloat (***testFunctionReturnType)(int arg);"
+    @"CGFloat *testFunctionReturnType(int arg);"
+    @"XCTestCase *testFunctionReturnType(int arg);"
+    @"XCTestCase *(^testFunctionReturnType)(int arg);"
+    ;
+    AST *ast = [OCParser parseSource:source];
+    ORDeclareExpression *declare1 = ast.globalStatements[0];
+    ORDeclareExpression *declare2 = ast.globalStatements[1];
+    ORDeclareExpression *declare3 = ast.globalStatements[2];
+    ORDeclareExpression *declare4 = ast.globalStatements[3];
+    ORDeclareExpression *declare5 = ast.globalStatements[4];
+    NSString *returnType1 = [NSString stringWithUTF8String:declare1.pair.typeEncode];
+    XCTAssert([returnType1 isEqualToString:@"d"], @"%@", returnType1);
+    NSString *returnType2 = [NSString stringWithUTF8String:declare2.pair.typeEncode];
+    XCTAssert([returnType2 isEqualToString:@"^^^d"], @"%@", returnType2);
+    NSString *returnType3 = [NSString stringWithUTF8String:declare3.pair.typeEncode];
+    XCTAssert([returnType3 isEqualToString:@"^d"], @"%@", returnType3);
+    NSString *returnType4 = [NSString stringWithUTF8String:declare4.pair.typeEncode];
+    XCTAssert([returnType4 isEqualToString:@"@"], @"%@", returnType4);
+    NSString *returnType5 = [NSString stringWithUTF8String:declare5.pair.typeEncode];
+    XCTAssert([returnType5 isEqualToString:@"@?"], @"%@", returnType5);
+}
+- (void)testWeakPropertyAndIvar{
+    MFScopeChain *scope = self.currentScope;
+    NSString *source =
+    @""
+    "@interface ORWeakPropertyAndIvar()"
+    "@property(nonatomic, strong)id strongValue;"
+    "@property(nonatomic, weak)id weakValue;"
+    "@end"
+    "@implementation ORWeakPropertyAndIvar"
+    "- (void)propertyStrong{"
+    "   self.strongValue = self;"
+    "}"
+    "- (void)propertyWeak{"
+    "   self.weakValue = self;"
+    "}"
+    "- (void)ivarStrong{"
+    "   _strongValue = self;"
+    "}"
+    "- (void)ivarWeak{"
+    "   _weakValue = self;"
+    "}"
+    "@end";
+    
+    AST *ast = [OCParser parseSource:source];
+    for (id <OCExecute> exp in ast.nodes) {
+        [exp execute:scope];
+    }
+    NSMutableString *propertyStrong = [NSMutableString string];
+    @autoreleasepool {
+        ORWeakPropertyAndIvar *test = [[ORWeakPropertyAndIvar alloc] initWithContainer:propertyStrong];
+        [test propertyStrong];
+    }
+    XCTAssert(propertyStrong.length == 0);
+    
+    NSMutableString *propertyWeak = [NSMutableString string];
+    @autoreleasepool {
+        ORWeakPropertyAndIvar *test = [[ORWeakPropertyAndIvar alloc] initWithContainer:propertyWeak];
+        [test propertyWeak];
+    }
+    XCTAssert([propertyWeak isEqualToString:@"dealloc"]);
+    
+    NSMutableString *ivarStrong = [NSMutableString string];
+    @autoreleasepool {
+        ORWeakPropertyAndIvar *test = [[ORWeakPropertyAndIvar alloc] initWithContainer:ivarStrong];
+        [test ivarStrong];
+    }
+    XCTAssert(ivarStrong.length == 0);
+    
+    NSMutableString *ivarWeak = [NSMutableString string];
+    @autoreleasepool {
+        ORWeakPropertyAndIvar *test = [[ORWeakPropertyAndIvar alloc] initWithContainer:ivarWeak];
+        [test ivarWeak];
+    }
+    XCTAssert([ivarWeak isEqualToString:@"dealloc"]);
+}
 - (void)testOCRecursiveFunctionPerformanceExample {
     [self measureBlock:^{
         fibonaccia(20);
@@ -494,5 +623,4 @@ typedef struct MyStruct2 {
         NSLog(@"%d",[scope getValueWithIdentifier:@"a"].uIntValue);
     }];
 }
-
 @end

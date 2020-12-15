@@ -12,7 +12,6 @@
 #import "MFMethodMapTable.h"
 #import "MFPropertyMapTable.h"
 #import "MFVarDeclareChain.h"
-#import "MFWeakPropertyBox.h"
 #import "MFBlock.h"
 #import "MFValue.h"
 #import "MFStaticVarTable.h"
@@ -21,6 +20,51 @@
 #import "ORTypeVarPair+TypeEncode.h"
 #import "ORCoreImp.h"
 #import "ORSearchedFunction.h"
+
+#if DEBUG
+NSMutableArray *ORDebugMainFrameStack(void){
+    NSMutableDictionary *threadInfo = [[NSThread mainThread] threadDictionary];
+    return threadInfo[@"ORDebugStack"];
+}
+NSMutableArray *ORDebugFrameStack(void){
+    NSMutableDictionary *threadInfo = [[NSThread currentThread] threadDictionary];
+    NSMutableArray *stack = threadInfo[@"ORDebugStack"];
+    if (!stack) {
+        stack = [NSMutableArray array];
+        threadInfo[@"ORDebugStack"] = stack;
+    }
+    return stack;
+}
+void ORDebugFrameStackPush(MFValue *value, NSObject *node){
+    if (value) {
+        [ORDebugFrameStack() addObject:@[value, node]];
+    }else{
+        [ORDebugFrameStack() addObject:@[node]];
+    }
+}
+void ORDebugFrameStackPop(void){
+    [ORDebugFrameStack() removeLastObject];
+}
+NSString *OCRunnerFrameStackHistory(void){
+    NSMutableArray *frames = ORDebugMainFrameStack();
+    NSMutableString *log = [@"OCRunner Frames:\n\n" mutableCopy];
+    for (NSArray *frame in frames) {
+        if (frame.count == 2) {
+            MFValue *target = frame.firstObject;
+            ORMethodImplementation *imp = frame.lastObject;
+            [log appendFormat:@"%@ %@ %@\n", imp.declare.isClassMethod ? @"+" : @"-", target.objectValue, imp.declare.selectorName];
+        }else{
+            ORFunctionImp *imp = frame.firstObject;
+            if (imp.declare.funVar.varname == nil){
+                [log appendString:@"  Block Call \n"];
+            }else{
+                [log appendFormat:@"  CFunction: %@\n", imp.declare.funVar.varname];
+            }
+        }
+    }
+    return log;
+}
+#endif
 
 static MFValue * invoke_MFBlockValue(MFValue *blockValue, NSArray *args){
     const char *blockTypeEncoding = [MFBlock typeEncodingForBlock:blockValue.objectValue];
@@ -54,10 +98,7 @@ static void replace_method(Class clazz, ORMethodImplementation *methodImp, MFSco
     ORMethodDeclare *declare = methodImp.declare;
     NSString *methodName = declare.selectorName;
     SEL sel = NSSelectorFromString(methodName);
-    
-    MFMethodMapTableItem *item = [[MFMethodMapTableItem alloc] initWithClass:clazz method:methodImp];
-    [[MFMethodMapTable shareInstance] addMethodMapTableItem:item];
-    
+
     BOOL needFreeTypeEncoding = NO;
     const char *typeEncoding;
     Method ocMethod;
@@ -87,7 +128,11 @@ static void replace_method(Class clazz, ORMethodImplementation *methodImp, MFSco
             class_addMethod(c2, orgSel, method_getImplementation(ocMethod), typeEncoding);
         }
     }
-    void *imp = register_method(&methodIMP, declare.parameterTypes, declare.returnType);
+    
+    MFMethodMapTableItem *item = [[MFMethodMapTableItem alloc] initWithClass:c2 method:methodImp];
+    [[MFMethodMapTable shareInstance] addMethodMapTableItem:item];
+    
+    void *imp = register_method(&methodIMP, declare.parameterTypes, declare.returnType, (__bridge_retained void *)methodImp);
     class_replaceMethod(c2, sel, imp, typeEncoding);
     if (needFreeTypeEncoding) {
         free((void *)typeEncoding);
@@ -98,7 +143,7 @@ static void replace_getter_method(Class clazz, ORPropertyDeclare *prop){
     SEL getterSEL = NSSelectorFromString(prop.var.var.varname);
     const char *retTypeEncoding  = prop.var.typeEncode;
     const char * typeEncoding = mf_str_append(retTypeEncoding, "@:");
-    void *imp = register_method(&getterImp, @[], prop.var);
+    void *imp = register_method(&getterImp, @[], prop.var, (__bridge  void *)prop);
     class_replaceMethod(clazz, getterSEL, imp, typeEncoding);
     free((void *)typeEncoding);
 }
@@ -110,7 +155,7 @@ static void replace_setter_method(Class clazz, ORPropertyDeclare *prop){
     SEL setterSEL = NSSelectorFromString([NSString stringWithFormat:@"set%@%@:",str1,str2]);
     const char *prtTypeEncoding  = prop.var.typeEncode;
     const char * typeEncoding = mf_str_append("v@:", prtTypeEncoding);
-    void *imp = register_method(&setterImp, @[prop.var], [ORTypeVarPair typePairWithTypeKind:TypeVoid]);
+    void *imp = register_method(&setterImp, @[prop.var], [ORTypeVarPair typePairWithTypeKind:TypeVoid],(__bridge_retained  void *)prop);
     class_replaceMethod(clazz, setterSEL, imp, typeEncoding);
     free((void *)typeEncoding);
 }
@@ -454,12 +499,12 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
     }
     
     //如果在方法缓存表的中已经找到相关方法，直接调用，省去一次中间类型转换问题。优化性能，在方法递归时，调用耗时减少33%，0.15s -> 0.10s
-    BOOL classMethod = object_isClass(instance);
-    Class class = classMethod ? instance : [instance class];
-    MFMethodMapTableItem *map = [[MFMethodMapTable shareInstance] getMethodMapTableItemWith:class classMethod:classMethod sel:sel];
+    BOOL isClassMethod = object_isClass(instance);
+    Class class = isClassMethod ? objc_getMetaClass(class_getName(instance)) : [instance class];
+    MFMethodMapTableItem *map = [[MFMethodMapTable shareInstance] getMethodMapTableItemWith:class classMethod:isClassMethod sel:sel];
     if (map) {
         MFScopeChain *newScope = [MFScopeChain scopeChainWithNext:scope];
-        newScope.instance = classMethod ? [MFValue valueWithClass:instance] : [MFValue valueWithObject:instance];
+        newScope.instance = isClassMethod ? [MFValue valueWithClass:instance] : [MFValue valueWithObject:instance];
         [ORArgsStack push:argValues];
         return [map.methodImp execute:newScope];
     }
@@ -540,8 +585,19 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
         return result;
     }else{
         MFValue *blockValue = [scope recursiveGetValueWithIdentifier:self.caller.value];
+        //调用block
         if (blockValue.isBlockValue) {
             return invoke_MFBlockValue(blockValue, args);
+        //调用函数指针 int (*xxx)(int a ) = &x;  xxxx();
+        }else if (blockValue.funPair) {
+            ORSearchedFunction *function = [ORSearchedFunction functionWithName:blockValue.funPair.var.varname];
+            while (blockValue.pointerCount > 1) {
+                blockValue.pointerCount--;
+            }
+            function.funPair = blockValue.funPair;
+            function.pointer = blockValue->realBaseValue.pointerValue;
+            [ORArgsStack push:args];
+            return [function execute:scope];
         }
     }
     return [MFValue valueWithObject:nil];
@@ -592,8 +648,10 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
             [self.declare execute:current];
         }
     }
+    ORDebugFrameStackPush(nil, self);
     MFValue *value = [self.scopeImp execute:current];
     value.resultType = MFStatementResultTypeNormal;
+    ORDebugFrameStackPop();
     return value;
 }
 @end
@@ -719,6 +777,9 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
                 NSString *reason = [NSString stringWithFormat:@"Unknown Class: %@",value.typeName];
                 @throw [NSException exceptionWithName:@"OCRunner" reason:reason userInfo:nil];
             }
+            if ([self.pair.var isKindOfClass:[ORFuncVariable class]]&& [(ORFuncVariable *)self.pair.var isBlock] == NO)
+                value.funPair = self.pair;
+            
             [scope setValue:value withIndentifier:self.pair.var.varname];
             return value;
         }else{
@@ -735,6 +796,10 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
                 NSString *reason = [NSString stringWithFormat:@"Unknown Type Identifier: %@",value.typeName];
                 @throw [NSException exceptionWithName:@"OCRunner" reason:reason userInfo:nil];
             }
+            
+            if ([self.pair.var isKindOfClass:[ORFuncVariable class]]&& [(ORFuncVariable *)self.pair.var isBlock] == NO)
+                value.funPair = self.pair;
+            
             [scope setValue:value withIndentifier:self.pair.var.varname];
             return value;
         }
@@ -771,6 +836,7 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
         }
         case UnaryOperatorIncrementPrefix:{
             PrefixUnaryExecuteInt(++, currentValue);
+            PrefixUnaryExecuteFloat(++, currentValue);
             break;
         }
         case UnaryOperatorDecrementPrefix:{
@@ -779,13 +845,15 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
             break;
         }
         case UnaryOperatorNot:{
-            box.boolValue = !currentValue.isSubtantial;
+            cal_result.box.boolValue = !currentValue.isSubtantial;
+            cal_result.typeEncode = OCTypeStringBOOL;
             break;
         }
         case UnaryOperatorSizeOf:{
             size_t result = 0;
             UnaryExecute(result, sizeof, currentValue);
-            box.longlongValue = result;
+            cal_result.box.longlongValue = result;
+            cal_result.typeEncode = OCTypeStringLongLong;
             break;
         }
         case UnaryOperatorBiteNot:{
@@ -824,87 +892,91 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
     START_BOX;
     switch (self.operatorType) {
         case BinaryOperatorAdd:{
-            BinaryExecuteInt(leftValue, +, rightValue, resultValue);
-            BinaryExecuteFloat(leftValue, +, rightValue, resultValue);
+            CalculateExecute(leftValue, +, rightValue);
             break;
         }
         case BinaryOperatorSub:{
-            BinaryExecuteInt(leftValue, -, rightValue, resultValue);
-            BinaryExecuteFloat(leftValue, -, rightValue, resultValue);
+            CalculateExecute(leftValue, -, rightValue);
             break;
         }
         case BinaryOperatorDiv:{
-            BinaryExecuteInt(leftValue, /, rightValue, resultValue);
-            BinaryExecuteFloat(leftValue, /, rightValue, resultValue);
+            CalculateExecute(leftValue, /, rightValue);
             break;
         }
         case BinaryOperatorMulti:{
-            BinaryExecuteInt(leftValue, *, rightValue, resultValue);
-            BinaryExecuteFloat(leftValue, *, rightValue, resultValue);
+            CalculateExecute(leftValue, *, rightValue);
             break;
         }
         case BinaryOperatorMod:{
-            BinaryExecuteInt(leftValue, %, rightValue, resultValue);
+            BinaryExecuteInt(leftValue, %, rightValue);
             break;
         }
         case BinaryOperatorShiftLeft:{
-            BinaryExecuteInt(leftValue, <<, rightValue, resultValue);
+            BinaryExecuteInt(leftValue, <<, rightValue);
             break;
         }
         case BinaryOperatorShiftRight:{
-            BinaryExecuteInt(leftValue, >>, rightValue, resultValue);
+            BinaryExecuteInt(leftValue, >>, rightValue);
             break;
         }
         case BinaryOperatorAnd:{
-            BinaryExecuteInt(leftValue, &, rightValue, resultValue);
+            BinaryExecuteInt(leftValue, &, rightValue);
             break;
         }
         case BinaryOperatorOr:{
-            BinaryExecuteInt(leftValue, |, rightValue, resultValue);
+            BinaryExecuteInt(leftValue, |, rightValue);
             break;
         }
         case BinaryOperatorXor:{
-            BinaryExecuteInt(leftValue, ^, rightValue, resultValue);
+            BinaryExecuteInt(leftValue, ^, rightValue);
             break;
         }
         case BinaryOperatorLT:{
             LogicBinaryOperatorExecute(leftValue, <, rightValue);
-            box.boolValue = logicResultValue;
+            cal_result.box.boolValue = logicResultValue;
+            cal_result.typeEncode = OCTypeStringBOOL;
             break;
         }
         case BinaryOperatorGT:{
             LogicBinaryOperatorExecute(leftValue, >, rightValue);
-            box.boolValue = logicResultValue;
+            cal_result.box.boolValue = logicResultValue;
+            cal_result.typeEncode = OCTypeStringBOOL;
             break;
         }
         case BinaryOperatorLE:{
             LogicBinaryOperatorExecute(leftValue, <=, rightValue);
-            box.boolValue = logicResultValue;
+            cal_result.box.boolValue = logicResultValue;
+            cal_result.typeEncode = OCTypeStringBOOL;
             break;
         }
         case BinaryOperatorGE:{
             LogicBinaryOperatorExecute(leftValue, >=, rightValue);
-            box.boolValue = logicResultValue;
+            cal_result.box.boolValue = logicResultValue;
+            cal_result.typeEncode = OCTypeStringBOOL;
             break;
         }
         case BinaryOperatorNotEqual:{
             LogicBinaryOperatorExecute(leftValue, !=, rightValue);
-            box.boolValue = logicResultValue;
+            cal_result.box.boolValue = logicResultValue;
+            cal_result.typeEncode = OCTypeStringBOOL;
             break;
         }
         case BinaryOperatorEqual:{
             LogicBinaryOperatorExecute(leftValue, ==, rightValue);
-            box.boolValue = logicResultValue;
+            cal_result.box.boolValue = logicResultValue;
+            cal_result.typeEncode = OCTypeStringBOOL;
             break;
         }
         case BinaryOperatorLOGIC_AND:{
             LogicBinaryOperatorExecute(leftValue, &&, rightValue);
-            box.boolValue = logicResultValue;
+            cal_result.box.boolValue = logicResultValue;
+            cal_result.typeEncode = OCTypeStringBOOL;
             break;
         }
         case BinaryOperatorLOGIC_OR:{
             LogicBinaryOperatorExecute(leftValue, ||, rightValue);
-            box.boolValue = logicResultValue;
+            cal_result.box.boolValue = logicResultValue;
+            cal_result.typeEncode = OCTypeStringBOOL;
             break;
         }
         default:
@@ -1189,9 +1261,11 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
 @implementation ORMethodImplementation(Execute)
 - (nullable MFValue *)execute:(MFScopeChain *)scope {
     MFScopeChain *current = [MFScopeChain scopeChainWithNext:scope];
+    ORDebugFrameStackPush(scope.instance, self);
     [self.declare execute:current];
     MFValue *result = [self.scopeImp execute:current];
     result.resultType = MFStatementResultTypeNormal;
+    ORDebugFrameStackPop();
     return result;
 }
 @end
@@ -1279,7 +1353,7 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
             [scope setValue:lastValue withIndentifier:[(ORValueExpression *)assignExp.value value]];
         }else if ([exp isKindOfClass:[ORValueExpression class]]){
             if (lastValue) {
-                lastValue = [MFValue valueWithLongLong:lastValue.longLongValue + 1];
+                lastValue = [MFValue valueWithLongLong:lastValue.longlongValue + 1];
                 lastValue.typeEncode = typeEncode;
                 [scope setValue:lastValue withIndentifier:[(ORValueExpression *)exp value]];
             }else{

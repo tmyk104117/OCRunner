@@ -53,6 +53,7 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
 - (instancetype)initTypeEncode:(const char *)typeEncoding pointer:(void *)pointer{
     self = [super init];
     typeEncoding = removeTypeEncodingPrefix((char *)typeEncoding);
+    _modifier = DeclarationModifierNone;
     [self setTypeEncode:typeEncoding];
     [self setPointer:pointer];
     return self;
@@ -147,7 +148,7 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
             size_t len = strlen(str);
             char * cstring = malloc(len * sizeof(char) + 1);
             cstring[len] = '\0';
-            if (*(void **)pointer != NULL) {
+            if (pointer != &replace) {
                 memcpy(cstring, str, len);
             }
             realBaseValue.pointerValue = cstring;
@@ -176,7 +177,7 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
             NSUInteger size = self.memerySize;
             void *dst = malloc(size);
             memset(dst, 0, size);
-            if (*(void **)pointer != NULL) {
+            if (pointer != &replace) {
                 memcpy(dst, pointer, size);
             }
             realBaseValue.pointerValue = dst;
@@ -221,9 +222,16 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
     return strcmp(self.typeEncode, OCTypeStringBlock) == 0;
 }
 - (void)setModifier:(DeclarationModifier)modifier{
-    if (modifier & DeclarationModifierWeak && (self.type == OCTypeObject || self.isBlockValue)) {
-        self.weakObjectValue = self.strongObjectValue;
-        self.strongObjectValue = nil;
+    if (self.type == OCTypeObject || self.isBlockValue) {
+        if  (modifier & DeclarationModifierWeak
+            && (self.modifier & (DeclarationModifierNone | DeclarationModifierStrong))) {
+            self.weakObjectValue = self.strongObjectValue;
+            self.strongObjectValue = nil;
+        }else if (self.modifier & DeclarationModifierWeak
+                  && (modifier & (DeclarationModifierNone | DeclarationModifierStrong))){
+            self.strongObjectValue = self.weakObjectValue;
+            self.weakObjectValue = nil;
+        }
     }
     _modifier = modifier;
 }
@@ -238,6 +246,10 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
     _type = *typeEncode;
     //基础类型转换
     if (strlen(typeEncode) == 1) {
+        //类型相同时，直接跳过
+        if (_typeEncode != NULL && *typeEncode == *_typeEncode) {
+            return;
+        }
         void *result = NULL;
         [self convertValueWithTypeEncode:typeEncode result:&result];
         _typeString.type = _type;
@@ -599,7 +611,7 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
     MFValueBridge(self, int);
     return result;
 }
-- (long long)longLongValue{
+- (long long)longlongValue{
     MFValueBridge(self, long long);
     return result;
 }
