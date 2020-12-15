@@ -96,46 +96,6 @@
 }
 @end
 
-@implementation ORStructDeclareTable{
-    NSMutableDictionary<NSString *, ORStructDeclare *> *_cache;
-}
-
-- (instancetype)init{
-    if (self = [super init]) {
-        _cache = [NSMutableDictionary dictionary];
-    }
-    return self;
-}
-+ (instancetype)shareInstance{
-    static id st_instance;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        st_instance = [[ORStructDeclareTable alloc] init];
-    });
-    return st_instance;
-}
-- (void)addAlias:(NSString *)alias forTypeName:(NSString *)name{
-    id value = [_cache objectForKey:name];
-    if (value) {
-        _cache[name] = value;
-    }
-}
-- (void)addAlias:(NSString *)alias forStructTypeEncode:(const char *)typeEncode{
-    NSString *structName = startStructNameDetect(typeEncode);
-    [self addAlias:alias forTypeName:structName];
-}
-- (void)addStructDeclare:(ORStructDeclare *)structDeclare{
-    if (structDeclare && structDeclare.name) {
-        _cache[structDeclare.name] = structDeclare;
-    }
-}
-
-- (ORStructDeclare *)getStructDeclareWithName:(NSString *)name{
-    return _cache[name];
-}
-@end
-
-
 @implementation ORTypeVarPair (Struct)
 - (ORStructDeclare *)strcutDeclare{
     NSCAssert(self.type.type == TypeStruct, @"must be TypeStruct");

@@ -29,15 +29,6 @@ NS_ASSUME_NONNULL_BEGIN
 + (instancetype)unionDecalre:(const char *)encode keys:(NSArray *)keys;
 @end
 
-@interface ORStructDeclareTable : NSObject
-+ (instancetype)shareInstance;
-- (void)addAlias:(NSString *)alias forTypeName:(NSString *)name;
-- (void)addAlias:(NSString *)alias forStructTypeEncode:(const char *)typeEncode;
-- (void)addStructDeclare:(ORStructDeclare *)structDeclare;
-- (nullable ORStructDeclare *)getStructDeclareWithName:(NSString *)name;
-@end
-
-
 @interface ORTypeVarPair (Struct)
 - (ORStructDeclare *)strcutDeclare;
 @end
