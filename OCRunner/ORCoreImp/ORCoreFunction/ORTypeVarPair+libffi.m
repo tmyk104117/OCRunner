@@ -52,6 +52,8 @@ ffi_type *typeEncode2ffi_type(const char *typeencode){
         case OCTypeSEL:
         case OCTypePointer:
         case OCTypeCString:
+        case OCTypeArray:
+        case OCTypeUnion:
             return &ffi_type_pointer;
             
         case OCTypeStruct:

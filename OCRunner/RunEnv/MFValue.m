@@ -548,6 +548,27 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type){
 }
 @end
 
+@implementation MFValue (Union)
+
+- (void)setFieldWithValue:(MFValue *)value forKey:(NSString *)key{
+    NSCAssert(self.type == OCTypeUnion, @"must be union");
+    NSString *structName = self.typeName;
+    ORStructDeclare *declare = [[ORStructDeclareTable shareInstance] getStructDeclareWithName:structName];
+    NSUInteger offset = declare.keyOffsets[key].unsignedIntegerValue;
+    void *pointer = realBaseValue.pointerValue;
+    [value writePointer:pointer typeEncode:declare.keyTypeEncodes[key].UTF8String];
+}
+
+- (MFValue *)fieldForKey:(NSString *)key copied:(BOOL)copied{
+    NSCAssert(self.type == OCTypeUnion, @"must be union");
+    NSString *structName = self.typeName;
+    ORStructDeclare *declare = [[ORStructDeclareTable shareInstance] getStructDeclareWithName:structName];
+    MFValue *result = [MFValue defaultValueWithTypeEncoding:declare.keyTypeEncodes[key].UTF8String];
+    result.pointer = realBaseValue.pointerValue;
+    return result;
+}
+@end
+
 @implementation MFValue (MFStatementResultType)
 - (BOOL)isReturn{
     return MFStatementResultTypeIsReturn(self.resultType);

@@ -19,11 +19,9 @@
     strcpy(encode, typeEncoding);
     self.typeEncoding = encode;
     NSMutableArray *results = startStructDetect(typeEncoding);
-    NSString *nameElement = results[0];
-    NSString *structName = [nameElement substringWithRange:NSMakeRange(0, nameElement.length - 1)];
-    [results removeObjectAtIndex:0];
-    self.name = structName;
+    self.name = results[0];
     self.keys = keys;
+    [results removeObjectAtIndex:0];
     [self initialWithFieldTypeEncodes:[results copy]];
     return self;
 }
@@ -68,7 +66,25 @@
     }
 }
 @end
-
+@implementation ORUnionDeclare
+- (instancetype)initWithTypeEncode:(const char *)typeEncoding keys:(NSArray<NSString *> *)keys{
+    self = [super init];
+    char *encode = malloc(sizeof(char) * (strlen(typeEncoding) + 1) );
+    strcpy(encode, typeEncoding);
+    self.typeEncoding = encode;
+    NSMutableArray *results = startUnionDetect(typeEncoding);
+    self.name = results[0];
+    self.keys = keys;
+    [results removeObjectAtIndex:0];
+    NSMutableDictionary *keyTyeps = [NSMutableDictionary dictionary];
+    NSCAssert(self.keys.count == results.count, @"");
+    [results enumerateObjectsUsingBlock:^(NSString *elementEncode, NSUInteger idx, BOOL * _Nonnull stop) {
+        keyTyeps[self.keys[idx]] = elementEncode;
+    }];
+    self.keyTypeEncodes = keyTyeps;
+    return self;
+}
+@end
 
 @implementation ORStructDeclareTable{
     NSMutableDictionary<NSString *, ORStructDeclare *> *_cache;
@@ -125,7 +141,6 @@
 @end
 @implementation ORTypeSymbolTable{
     NSMutableDictionary<NSString *, ORSymbolItem *> *_table;
-    NSLock *_lock;
 }
 
 - (instancetype)init{
