@@ -341,7 +341,7 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
     return declare;
 }
 - (nullable MFValue *)execute:(MFScopeChain *)scope {
-    NSMutableArray * parameters = [ORArgsStack  pop];
+    NSArray * parameters = contextStackSeek();
     [parameters enumerateObjectsUsingBlock:^(MFValue * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
         [scope setValue:obj withIndentifier:self.funVar.pairs[idx].var.varname];
     }];
@@ -512,10 +512,11 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
     Class class = isClassMethod ? objc_getMetaClass(class_getName(instance)) : [instance class];
     MFMethodMapTableItem *map = [[MFMethodMapTable shareInstance] getMethodMapTableItemWith:class classMethod:isClassMethod sel:sel];
     if (map) {
-        MFScopeChain *newScope = [MFScopeChain scopeChainWithNext:scope];
-        newScope.instance = isClassMethod ? [MFValue valueWithClass:instance] : [MFValue valueWithObject:instance];
-        [ORArgsStack push:argValues];
-        return [map.methodImp execute:newScope];
+        scope.instance = variable;
+        contextMultiPush(argValues);
+        MFValue *result = [map.methodImp execute:scope];
+        contextMultiPop();
+        return result;
     }
     NSMethodSignature *sig = [instance methodSignatureForSelector:sel];
     if (sig == nil) {
@@ -583,14 +584,16 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
     if ([functionImp isKindOfClass:[ORFunctionImp class]]){
         // global function calll
         MFValue *result = nil;
-        [ORArgsStack push:args];
+        contextMultiPush(args);
         result = [(ORFunctionImp *)functionImp execute:scope];
+        contextMultiPop();
         return result;
     }else if([functionImp isKindOfClass:[ORSearchedFunction class]]) {
         // 调用系统函数
         MFValue *result = nil;
-        [ORArgsStack push:args];
+        contextMultiPush(args);
         result = [(ORSearchedFunction *)functionImp execute:scope];
+        contextMultiPop();
         return result;
     }else{
         MFValue *blockValue = [scope recursiveGetValueWithIdentifier:self.caller.value];
@@ -605,8 +608,10 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
             }
             function.funPair = blockValue.funPair;
             function.pointer = blockValue->realBaseValue.pointerValue;
-            [ORArgsStack push:args];
-            return [function execute:scope];
+            contextMultiPush(args);
+            MFValue *result = [function execute:scope];
+            contextMultiPop();
+            return result;
         }
     }
     return [MFValue valueWithObject:nil];
@@ -628,7 +633,7 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
 @implementation ORFunctionImp (Execute)
 - ( MFValue *)execute:(MFScopeChain *)scope{
     // C函数声明执行, 向全局作用域注册函数
-    if ([ORArgsStack isEmpty]
+    if (contextStackIsEmpty()
         && self.declare.funVar.varname
         && self.declare.funVar.ptCount == 0) {
         NSString *funcName = self.declare.funVar.varname;
@@ -1259,7 +1264,7 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
 @end
 @implementation ORMethodDeclare(Execute)
 - (nullable MFValue *)execute:(MFScopeChain *)scope {
-    NSMutableArray * parameters = [ORArgsStack pop];
+    NSArray * parameters = contextStackSeek();
     [parameters enumerateObjectsUsingBlock:^(MFValue * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
         [scope setValue:obj withIndentifier:self.parameterNames[idx]];
     }];

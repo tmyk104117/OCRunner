@@ -33,9 +33,9 @@ void methodIMP(ffi_cif *cfi,void *ret,void **args, void*userdata){
     }else{
         scope.instance = [MFValue valueWithObject:target];
     }
-    MFValue *value = nil;
-    [ORArgsStack push:argValues];
-    value = [methodImp execute:scope];
+    contextMultiPush(argValues);
+    MFValue *value = [methodImp execute:scope];
+    contextMultiPop();
     if (value.type != TypeVoid && value.pointer != NULL){
         // 类型转换
         [value writePointer:ret typeEncode:[sig methodReturnType]];
@@ -52,8 +52,9 @@ void blockInter(ffi_cif *cfi,void *ret,void **args, void*userdata){
         [argValues addObject:argValue];
     }
     MFValue *value = nil;
-    [ORArgsStack push:argValues];
+    contextMultiPush(argValues);
     value = [mangoBlock.func execute:mangoBlock.outScope];
+    contextMultiPop();
     if (value.type != TypeVoid && value.pointer != NULL){
         // 类型转换
         [value writePointer:ret typeEncode:[sig methodReturnType]];

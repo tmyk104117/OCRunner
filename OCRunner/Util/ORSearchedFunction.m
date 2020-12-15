@@ -9,7 +9,7 @@
 #import "ORSearchedFunction.h"
 #import "SymbolSearch.h"
 #import "RunnerClasses+Execute.h"
-#import "ORArgsStack.h"
+#import "ORThreadContext.h"
 #import "MFValue.h"
 #import "ORTypeVarPair+TypeEncode.h"
 #import "ORCoreImp.h"
@@ -40,7 +40,7 @@
     return table;
 }
 - (nullable MFValue *)execute:(nonnull MFScopeChain *)scope {
-    NSArray <MFValue *>*args = [ORArgsStack pop];
+    NSArray <MFValue *>*args = contextStackSeek();
     NSString *typeName = self.funPair.type.name;
     const char *reg_typeencode = [[ORTypeSymbolTable shareInstance] symbolItemForTypeName:typeName].typeEncode.UTF8String;
     const char *org_typeencode = self.funPair.typeEncode;
