@@ -19,9 +19,8 @@
             return @"@?".UTF8String;
         }
     }
-    if (type == TypeStruct && self.var.ptCount == 0) {
-        ORStructDeclare *declare = [[ORStructDeclareTable shareInstance] getStructDeclareWithName:self.type.name];
-        return declare.typeEncoding;
+    if ((type == TypeStruct || type == TypeUnion) && self.var.ptCount == 0) {
+        return [[ORTypeSymbolTable shareInstance] symbolItemForTypeName:self.type.name].typeEncode.UTF8String;
     }
     char encoding[128];
     memset(encoding, 0, 128);

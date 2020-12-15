@@ -374,6 +374,11 @@ extern BOOL MFStatementResultTypeIsReturn(MFStatementResultType type);
 - (void)enumerateStructFieldsUsingBlock:(void (^)(MFValue *field, NSUInteger idx, BOOL *stop))block;
 @end
 
+@interface MFValue (Union)
+- (void)setUnionFieldWithValue:(MFValue *)value forKey:(NSString *)key;
+- (MFValue *)unionFieldForKey:(NSString *)key;
+@end
+
 @interface MFValue (MFStatementResultType)
 @property (assign, nonatomic, readonly) BOOL isReturn;
 @property (assign, nonatomic, readonly) BOOL isContinue;

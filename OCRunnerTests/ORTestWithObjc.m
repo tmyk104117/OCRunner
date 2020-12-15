@@ -48,7 +48,7 @@ int fibonaccia(int n) {
         NSString *CCDData = [NSString stringWithContentsOfFile:GCDPath encoding:NSUTF8StringEncoding error:nil];
         ast = [OCParser parseSource:CCDData];
         [ORInterpreter excuteNodes:ast.nodes];
-    });    
+    });
     self.topScope = [MFScopeChain topScope];
     mf_add_built_in(self.topScope);
     XCTAssert(self.topScope.vars.count != 0);
@@ -69,6 +69,15 @@ int fibonaccia(int n) {
     XCTAssert(a.size.width == 3);
     XCTAssert(a.size.height == 4);
 }
+
+typedef union TestUnion1{
+    int a;
+    int b;
+    CGFloat c;
+    char *d;
+    CGRect rect;
+}TestUnion1;
+
 typedef struct Element1Struct{
     int **a;
     int *b;
@@ -114,15 +123,62 @@ Element2Struct *Element2StructMake(){
     XCTAssertEqualObjects(decl.keyTypeEncodes[@"x"], @"d");
     XCTAssertEqualObjects(decl.keyTypeEncodes[@"y"], @"d");
 }
+- (void)testUnionValueGet{
+    TestUnion1 value;
+    value.a = 1;
+    
+    ORStructDeclare *rectDecl = [ORStructDeclare structDecalre:@encode(CGRect) keys:@[@"origin",@"size"]];
+    ORStructDeclare *pointDecl = [ORStructDeclare structDecalre:@encode(CGPoint) keys:@[@"x",@"y"]];
+    ORStructDeclare *sizeDecl = [ORStructDeclare structDecalre:@encode(CGSize) keys:@[@"width",@"height"]];
+    ORUnionDeclare *decalre = [ORUnionDeclare unionDecalre:@encode(TestUnion1) keys:@[@"a",@"b",@"c",@"d",@"rect"]];
+    
+    [[ORTypeSymbolTable shareInstance] addStruct:rectDecl];
+    [[ORTypeSymbolTable shareInstance] addStruct:pointDecl];
+    [[ORTypeSymbolTable shareInstance] addStruct:sizeDecl];
+    [[ORTypeSymbolTable shareInstance] addUnion:decalre];
+    
+    MFValue *result = [[MFValue alloc] initTypeEncode:decalre.typeEncoding pointer:&value];
+    XCTAssert([result unionFieldForKey:@"a"].intValue == 1);
+    value.rect = CGRectMake(1, 2, 3, 4);
+    result = [[MFValue alloc] initTypeEncode:decalre.typeEncoding pointer:&value];
+    MFValue *rectValue = [result unionFieldForKey:@"rect"];
+    double height = [[rectValue fieldForKey:@"size"] fieldForKey:@"height"].doubleValue;
+    XCTAssert(height == 4);
+    double value2 = [result unionFieldForKey:@"c"].doubleValue;
+    XCTAssert(value2 == 1);
+    ;
+}
+- (void)testUnionSetValue{
+    MFScopeChain *scope = self.currentScope;
+    NSString *source =
+    @"union TestUnion2{"
+    "    int a;"
+    "    int b;"
+    "    CGFloat c;"
+    "    char *d;"
+    "    CGRect rect;"
+    "};"
+    "TestUnion2 value;"
+    "value.a = 2;";
+    AST *ast = [OCParser parseSource:source];
+    for (id <OCExecute> exp in ast.nodes) {
+        [exp execute:scope];
+    }
+    MFValue *value = [scope getValueWithIdentifier:@"value"];
+    XCTAssert([value unionFieldForKey:@"b"].intValue == 2);
+    TestUnion1 result = *(TestUnion1 *)value.pointer;
+    XCTAssert(result.a == 2);
+    XCTAssert(result.b == 2);
+}
 - (void)testStructValueGet{
     CGRect rect = CGRectMake(1, 2, 3, 4);
     ORStructDeclare *rectDecl = [ORStructDeclare structDecalre:@encode(CGRect) keys:@[@"origin",@"size"]];
     ORStructDeclare *pointDecl = [ORStructDeclare structDecalre:@encode(CGPoint) keys:@[@"x",@"y"]];
     ORStructDeclare *sizeDecl = [ORStructDeclare structDecalre:@encode(CGSize) keys:@[@"width",@"height"]];
     
-    [[ORStructDeclareTable shareInstance] addStructDeclare:rectDecl];
-    [[ORStructDeclareTable shareInstance] addStructDeclare:pointDecl];
-    [[ORStructDeclareTable shareInstance] addStructDeclare:sizeDecl];
+    [[ORTypeSymbolTable shareInstance] addStruct:rectDecl];
+    [[ORTypeSymbolTable shareInstance] addStruct:pointDecl];
+    [[ORTypeSymbolTable shareInstance] addStruct:sizeDecl];
     
     MFValue *rectValue = [[MFValue alloc] initTypeEncode:rectDecl.typeEncoding pointer:&rect];
     CGFloat x = *(CGFloat *)[[rectValue fieldForKey:@"origin"] fieldForKey:@"x"].pointer;
@@ -147,9 +203,9 @@ Element2Struct *Element2StructMake(){
     ORStructDeclare *element2Decl = [ORStructDeclare structDecalre:@encode(Element2Struct) keys:@[@"x",@"y",@"z",@"t"]];
     ORStructDeclare *containerDecl = [ORStructDeclare structDecalre:@encode(ContainerStruct) keys:@[@"element1",@"element1Pointer",@"element2",@"element2Pointer"]];
     
-    [[ORStructDeclareTable shareInstance] addStructDeclare:element1Decl];
-    [[ORStructDeclareTable shareInstance] addStructDeclare:element2Decl];
-    [[ORStructDeclareTable shareInstance] addStructDeclare:containerDecl];
+    [[ORTypeSymbolTable shareInstance] addStruct:element1Decl];
+    [[ORTypeSymbolTable shareInstance] addStruct:element2Decl];
+    [[ORTypeSymbolTable shareInstance] addStruct:containerDecl];
     
     MFValue *containerValue = [[MFValue alloc] initTypeEncode:containerDecl.typeEncoding pointer:&container];
     CGFloat c3 = [[[containerValue fieldForKey:@"element2"] fieldForKey:@"t"] fieldForKey:@"c"].doubleValue;
@@ -166,11 +222,34 @@ Element2Struct *Element2StructMake(){
     XCTAssert(pointerCount == 3);
 }
 - (void)testStructDetect{
-    NSArray *results = startStructDetect("{CGPointer=dd}");
-    XCTAssertEqualObjects(results[0], @"CGPointer=");
+    NSArray *results = startStructDetect("{CGPointer=dd(Test=idf*)[10i]}");
+    XCTAssertEqualObjects(results[0], @"CGPointer");
     XCTAssertEqualObjects(results[1], @"d");
     XCTAssertEqualObjects(results[2], @"d");
+    XCTAssertEqualObjects(results[3], @"(Test=idf*)");
+    XCTAssertEqualObjects(results[4], @"[10i]");
     NSArray *results1 = startStructDetect("d");
+    XCTAssert(results1.count == 0);
+}
+- (void)testUinonDetect{
+    NSArray *results = startUnionDetect("(CGPointer=dd{Test=idf*}[10i])");
+    XCTAssertEqualObjects(results[0], @"CGPointer");
+    XCTAssertEqualObjects(results[1], @"d");
+    XCTAssertEqualObjects(results[2], @"d");
+    XCTAssertEqualObjects(results[3], @"{Test=idf*}");
+    XCTAssertEqualObjects(results[4], @"[10i]");
+    NSArray *results1 = startUnionDetect("d");
+    XCTAssert(results1.count == 0);
+}
+- (void)testArrayDetect{
+    NSArray *results = startArrayDetect("[10(Test=idf*)]");
+    XCTAssertEqualObjects(results[0], @"10");
+    XCTAssertEqualObjects(results[1], @"(Test=idf*)");
+    results = startArrayDetect("[0i]");
+    XCTAssertEqualObjects(results[0], @"0");
+    XCTAssertEqualObjects(results[1], @"i");
+    
+    NSArray *results1 = startArrayDetect("d");
     XCTAssert(results1.count == 0);
 }
 - (void)testStructSetValueNoCopy{

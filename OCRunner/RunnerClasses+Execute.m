@@ -463,7 +463,7 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
         [(ORMethodCall *)self.caller setIsAssignedValue:self.isAssignedValue];
     }
     MFValue *variable = [self.caller execute:scope];
-    if (variable.type == OCTypeStruct) {
+    if (variable.type == OCTypeStruct || variable.type == OCTypeUnion) {
         if ([self.names.firstObject hasPrefix:@"set"]) {
             NSString *setterName = self.names.firstObject;
             ORNode *valueExp = self.values.firstObject;
@@ -471,13 +471,22 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
             NSString *first = [[fieldKey substringToIndex:1] lowercaseString];
             NSString *other = setterName.length > 1 ? [fieldKey substringFromIndex:1] : @"";
             fieldKey = [NSString stringWithFormat:@"%@%@", first, other];
-            [variable setFieldWithValue:[valueExp execute:scope] forKey:fieldKey];
+            MFValue *value = [valueExp execute:scope];
+            if (variable.type == OCTypeStruct) {
+                [variable setFieldWithValue:value forKey:fieldKey];
+            }else{
+                [variable setUnionFieldWithValue:value forKey:fieldKey];
+            }
             return [MFValue voidValue];
         }else{
-            if (self.isAssignedValue) {
-                return [variable fieldNoCopyForKey:self.names.firstObject];
+            if (variable.type == OCTypeStruct) {
+                if (self.isAssignedValue) {
+                    return [variable fieldNoCopyForKey:self.names.firstObject];
+                }else{
+                    return [variable fieldForKey:self.names.firstObject];
+                }
             }else{
-                return [variable fieldForKey:self.names.firstObject];
+                return [variable unionFieldForKey:self.names.firstObject];;
             }
         }
     }
@@ -1316,23 +1325,13 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
     for (ORDeclareExpression *exp in self.fields) {
         NSString *typeName = exp.pair.type.name;
         ORSymbolItem *item = [[ORTypeSymbolTable shareInstance] symbolItemForTypeName:typeName];
-        if (item) {
-            [typeEncode appendFormat:@"%s",item.typeEncode.UTF8String];
-        }else{
-            [typeEncode appendFormat:@"%s",exp.pair.typeEncode];
-        }
+        [typeEncode appendFormat:@"%s",item ? item.typeEncode.UTF8String : exp.pair.typeEncode];
         [keys addObject:exp.pair.var.varname];
     }
     [typeEncode appendString:@"}"];
-    ORStructDeclare *declare = [ORStructDeclare structDecalre:typeEncode.UTF8String keys:keys];
-    [[ORStructDeclareTable shareInstance] addStructDeclare:declare];
-    
-    ORTypeSpecial *special = [ORTypeSpecial specialWithType:TypeStruct name:self.sturctName];
-    ORTypeVarPair *pair = [[ORTypeVarPair alloc] init];
-    pair.type = special;
     // 类型表注册全局类型
-    [[ORTypeSymbolTable shareInstance] addTypePair:pair forAlias:self.sturctName];
-    
+    ORStructDeclare *declare = [ORStructDeclare structDecalre:typeEncode.UTF8String keys:keys];
+    [[ORTypeSymbolTable shareInstance] addStruct:declare forAlias:self.sturctName];
     return [MFValue voidValue];
 }
 @end
@@ -1389,6 +1388,11 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
         ORTypeVarPair *pair = [[ORTypeVarPair alloc] init];
         pair.type = special;
         [[ORTypeSymbolTable shareInstance] addTypePair:pair forAlias:self.typeNewName];
+    }else if ([self.expression isKindOfClass:[ORUnionExpressoin class]]){
+        ORUnionExpressoin *unionExp = (ORUnionExpressoin *)self.expression;
+        [unionExp execute:scope];
+        ORSymbolItem *item = [[ORTypeSymbolTable shareInstance] symbolItemForTypeName:unionExp.unionName];
+        [[ORTypeSymbolTable shareInstance] addSybolItem:item forAlias:self.typeNewName];
     }else{
         NSCAssert(NO, @"must be ORTypeVarPair, ORStructExpressoin,  OREnumExpressoin");
     }
@@ -1431,6 +1435,20 @@ void copy_undef_var(id exprOrStatement, MFVarDeclareChain *chain, MFScopeChain *
 
 @implementation ORUnionExpressoin (Execute)
 - (MFValue *)execute:(MFScopeChain *)scope{
+    NSMutableString *typeEncode = [@"(" mutableCopy];
+    NSMutableArray *keys = [NSMutableArray array];
+    [typeEncode appendString:self.unionName];
+    [typeEncode appendString:@"="];
+    for (ORDeclareExpression *exp in self.fields) {
+        NSString *typeName = exp.pair.type.name;
+        ORSymbolItem *item = [[ORTypeSymbolTable shareInstance] symbolItemForTypeName:typeName];
+        [typeEncode appendFormat:@"%s",item ?  item.typeEncode.UTF8String : exp.pair.typeEncode];
+        [keys addObject:exp.pair.var.varname];
+    }
+    [typeEncode appendString:@")"];
+    // 类型表注册全局类型
+    ORUnionDeclare *declare = [ORUnionDeclare unionDecalre:typeEncode.UTF8String keys:keys];;
+    [[ORTypeSymbolTable shareInstance] addUnion:declare forAlias:self.unionName];
     return [MFValue voidValue];
 }
 @end

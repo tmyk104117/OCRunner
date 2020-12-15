@@ -63,7 +63,7 @@ ffi_type *typeEncode2ffi_type(const char *typeencode){
             type->alignment = 0;
             NSString *structName = startStructNameDetect(typeencode);
             assert(structName != nil);
-            ORStructDeclare *declare = [[ORStructDeclareTable shareInstance] getStructDeclareWithName:structName];
+            ORStructDeclare *declare = [[ORTypeSymbolTable shareInstance] symbolItemForTypeName:structName].declare;
             type->elements = malloc(sizeof(void *) * (declare.keys.count + 1));
             type->size = sizeOfTypeEncode(declare.typeEncoding);
             for (int i = 0; i < declare.keys.count; i++) {

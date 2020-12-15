@@ -67,6 +67,9 @@
 }
 @end
 @implementation ORUnionDeclare
++ (instancetype)unionDecalre:(const char *)encode keys:(NSArray *)keys{
+    return [[self alloc] initWithTypeEncode:encode keys:keys];
+}
 - (instancetype)initWithTypeEncode:(const char *)typeEncoding keys:(NSArray<NSString *> *)keys{
     self = [super init];
     char *encode = malloc(sizeof(char) * (strlen(typeEncoding) + 1) );
@@ -83,6 +86,13 @@
     }];
     self.keyTypeEncodes = keyTyeps;
     return self;
+}
+- (void)dealloc
+{
+    if (self.typeEncoding != NULL) {
+        void *encode = (void *)self.typeEncoding;
+        free(encode);
+    }
 }
 @end
 
@@ -129,7 +139,7 @@
 @implementation ORTypeVarPair (Struct)
 - (ORStructDeclare *)strcutDeclare{
     NSCAssert(self.type.type == TypeStruct, @"must be TypeStruct");
-    return [[ORStructDeclareTable shareInstance] getStructDeclareWithName:self.type.name];
+    return [[ORTypeSymbolTable shareInstance] symbolItemForTypeName:self.type.name].declare;
 }
 @end
 
@@ -137,6 +147,15 @@
 @implementation ORSymbolItem
 - (NSString *)description{
     return [NSString stringWithFormat:@"ORSymbolItem:{ encode:%@ type: %@ }",self.typeEncode,self.typeName];
+}
+- (BOOL)isStruct{
+    return *self.typeEncode.UTF8String == OCTypeStruct;
+}
+- (BOOL)isUnion{
+    return *self.typeEncode.UTF8String == OCTypeUnion;
+}
+- (BOOL)isCArray{
+    return *self.typeEncode.UTF8String == OCTypeArray;
 }
 @end
 @implementation ORTypeSymbolTable{
@@ -157,11 +176,11 @@
     });
     return st_instance;
 }
-- (void)addTypePair:(ORTypeVarPair *)typePair{
+- (ORSymbolItem *)addTypePair:(ORTypeVarPair *)typePair{
     NSCAssert(typePair.var.varname != nil, @"");
-    [self addTypePair:typePair forAlias:typePair.var.varname];
+    return [self addTypePair:typePair forAlias:typePair.var.varname];
 }
-- (void)addTypePair:(ORTypeVarPair *)typePair forAlias:(NSString *)alias{
+- (ORSymbolItem *)addTypePair:(ORTypeVarPair *)typePair forAlias:(NSString *)alias{
     ORSymbolItem *item = [self symbolItemForTypeName:alias];
     if (item == nil) {
         item = [[ORSymbolItem alloc] init];
@@ -169,6 +188,35 @@
         item.typeName = typePair.type.name;
     }
     [self addSybolItem:item forAlias:alias];
+    return item;
+}
+- (ORSymbolItem *)addUnion:(ORUnionDeclare *)declare{
+    return [self addUnion:declare forAlias:declare.name];
+}
+- (ORSymbolItem *)addStruct:(ORStructDeclare *)declare{
+    return [self addStruct:declare forAlias:declare.name];
+}
+- (ORSymbolItem *)addStruct:(ORStructDeclare *)declare forAlias:(NSString *)alias{
+    ORSymbolItem *item = [self symbolItemForTypeName:alias];
+    if (item == nil) {
+        item = [[ORSymbolItem alloc] init];
+        item.typeEncode = [NSString stringWithUTF8String:declare.typeEncoding];
+        item.typeName = declare.name;
+    }
+    item.declare = declare;
+    [self addSybolItem:item forAlias:alias];
+    return item;
+}
+- (ORSymbolItem *)addUnion:(ORUnionDeclare *)declare forAlias:(NSString *)alias{
+    ORSymbolItem *item = [self symbolItemForTypeName:alias];
+    if (item == nil) {
+        item = [[ORSymbolItem alloc] init];
+        item.typeEncode = [NSString stringWithUTF8String:declare.typeEncoding];
+        item.typeName = declare.name;
+    }
+    item.declare = declare;
+    [self addSybolItem:item forAlias:alias];
+    return item;
 }
 - (void)addSybolItem:(ORSymbolItem *)item forAlias:(NSString *)alias{
     NSAssert(alias != nil, @"");
